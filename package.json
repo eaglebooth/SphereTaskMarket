@@ -1,0 +1,39 @@
+{
+  "name": "sphere-task-market",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous agent job market and payment settlement demo for Unicity Sphere Testnet v2.",
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1 --port 5174\"",
+    "dev:api": "tsx src/server/index.ts",
+    "dev:web": "vite --host 127.0.0.1 --port 5174",
+    "demo:scenario": "tsx src/server/demoScenario.ts",
+    "live:worker": "tsx src/server/liveWorker.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@unicitylabs/sphere-sdk": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "tsx": "latest",
+    "vite": "latest",
+    "ws": "^8.21.0",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}

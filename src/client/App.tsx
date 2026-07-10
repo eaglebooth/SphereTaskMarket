@@ -1,0 +1,393 @@
+import { BadgeCheck, Bot, BriefcaseBusiness, CircleDollarSign, Pause, Play, RefreshCw, Route, ShieldCheck, WalletCards } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { AuditEvent, Job, TaskMarketSnapshot, TaskPolicy } from '../shared/types';
+import './styles.css';
+
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
+
+function App() {
+  const [snapshot, setSnapshot] = useState<TaskMarketSnapshot | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    try {
+      const response = await fetch('/api/state');
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      setSnapshot(await response.json());
+    } catch {
+      setSnapshot((current) => advancePreview(current ?? createPreviewSnapshot()));
+    }
+  }
+
+  async function command(path: string) {
+    setSaving(true);
+    try {
+      const response = await fetch(path, { method: 'POST' });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      setSnapshot(await response.json());
+    } catch {
+      setSnapshot((current) => ({ ...advancePreview(current ?? createPreviewSnapshot()), status: path.includes('/stop') ? 'paused' : 'running' }));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function patchPolicy(patch: Partial<TaskPolicy>) {
+    setSaving(true);
+    try {
+      const response = await fetch('/api/policy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch)
+      });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      setSnapshot(await response.json());
+    } catch {
+      setSnapshot((current) => {
+        const next = current ?? createPreviewSnapshot();
+        return { ...next, policy: { ...next.policy, ...patch } };
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(), 1600);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const totals = useMemo(() => {
+    if (!snapshot) return { paid: 0, delivered: 0, open: 0 };
+    return {
+      paid: snapshot.payments.filter((payment) => payment.status === 'paid' || payment.status === 'simulated').length,
+      delivered: snapshot.jobs.filter((job) => job.status === 'delivered' || job.status === 'paid').length,
+      open: snapshot.jobs.filter((job) => job.status === 'open').length
+    };
+  }, [snapshot]);
+
+  if (!snapshot) {
+    return <main className="loading">Loading Sphere Task Market...</main>;
+  }
+
+  const running = snapshot.status === 'running';
+
+  return (
+    <main>
+      <header className="topbar">
+        <div className="brand">
+          <div className="brandRow">
+            <div className="brandMark" aria-hidden="true"><Route size={28} /></div>
+            <h1>Sphere Task Market</h1>
+          </div>
+          <p className="eyebrow">Autonomous agent job market with payment settlement</p>
+        </div>
+        <div className="statusCluster">
+          <span className={`pill ${snapshot.mode}`}>{snapshot.mode}</span>
+          <span className={`pill ${snapshot.status}`}>{snapshot.status}</span>
+          <button className={running ? 'secondary' : 'primary'} disabled={saving} onClick={() => command(running ? '/api/agent/stop' : '/api/agent/start')}>
+            {running ? <Pause size={18} /> : <Play size={18} />}
+            {running ? 'Pause' : 'Start'}
+          </button>
+          <button className="icon" disabled={saving} onClick={() => command('/api/agent/tick')} title="Run one agent tick">
+            <RefreshCw size={18} />
+          </button>
+        </div>
+      </header>
+
+      {snapshot.error && <section className="alert">{snapshot.error}</section>}
+
+      <section className="metrics">
+        <Metric icon={<Bot />} label="Client Agent" value={snapshot.clientName} detail={snapshot.lastTickAt ?? 'not ticked'} />
+        <Metric icon={<BadgeCheck />} label="Worker Service" value={snapshot.workerName} detail={`${Math.round(snapshot.workerProfile.successRate * 100)}% success`} />
+        <Metric icon={<BriefcaseBusiness />} label="Delivered Jobs" value={String(totals.delivered)} detail={`${totals.open} open jobs`} />
+        <Metric icon={<CircleDollarSign />} label="Payments" value={String(totals.paid)} detail={snapshot.policy.paymentAsset} />
+      </section>
+
+      <section className="workspace">
+        <aside className="leftStack">
+          <WalletPanel title="Client Wallet" wallet={snapshot.clientWallet} balances={snapshot.balances} />
+          <PolicyPanel policy={snapshot.policy} onChange={patchPolicy} disabled={saving} />
+        </aside>
+
+        <div className="rightGrid">
+          <Panel title="Job Market" className="jobsPanel">
+            <JobList jobs={snapshot.jobs} />
+          </Panel>
+          <Panel title="Worker Agent" className="workerPanel">
+            <WorkerCard snapshot={snapshot} />
+          </Panel>
+          <Panel title="Payments" className="paymentsPanel">
+            <div className="paymentList">
+              {snapshot.payments.length === 0 && <p className="empty">No payments yet.</p>}
+              {snapshot.payments.map((payment) => (
+                <div className="payment" key={payment.id}>
+                  <div className="paymentAmount">
+                    <strong>{money.format(payment.amount)} {payment.asset}</strong>
+                    <span>Payment</span>
+                  </div>
+                  <div className="paymentRoute">
+                    <span>{payment.from}</span>
+                    <span>{'->'}</span>
+                    <span>{payment.to}</span>
+                  </div>
+                  <span className={`paymentStatus ${payment.status}`}>{payment.status}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+          <Panel title="Decision Audit" className="auditPanel">
+            <div className="timeline">
+              {snapshot.audit.map((event) => (
+                <article className={`event ${event.level}`} key={event.id}>
+                  <div className="eventHeader">
+                    <strong>{auditTitle(event)}</strong>
+                    <time>{new Date(event.at).toLocaleTimeString()}</time>
+                  </div>
+                  {auditAmount(event.message) && <span className="eventAmount">{auditAmount(event.message)}</span>}
+                  <p>{event.message}</p>
+                </article>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </section>
+
+      <section className="reviewerWrap">
+        <ReviewerPanel snapshot={snapshot} />
+      </section>
+    </main>
+  );
+}
+
+function Metric({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
+  return (
+    <article className="metric">
+      <div className="metricIcon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{detail}</small>
+      </div>
+    </article>
+  );
+}
+
+function Panel({ title, children, className = '' }: { title: string; children: ReactNode; className?: string }) {
+  return (
+    <section className={`panel ${className}`}>
+      <h2>{title}</h2>
+      <div className="panelBody">{children}</div>
+    </section>
+  );
+}
+
+function WalletPanel({ title, wallet, balances }: { title: string; wallet: TaskMarketSnapshot['clientWallet']; balances: TaskMarketSnapshot['balances'] }) {
+  return (
+    <section className="walletPanel">
+      <div className="panelTitle"><WalletCards size={18} /><h2>{title}</h2></div>
+      <div className={`walletState ${wallet.connection === 'connected' || wallet.connection === 'simulated' ? 'ok' : 'warn'}`}>
+        <ShieldCheck size={18} />
+        <div><strong>{wallet.connection}</strong><span>{wallet.nametag}</span></div>
+      </div>
+      <dl className="walletDetails">
+        <div><dt>Network</dt><dd>{wallet.network}</dd></div>
+        <div><dt>Wallet API</dt><dd>{wallet.walletApiSession ?? 'n/a'}</dd></div>
+        <div><dt>Mnemonic</dt><dd>{wallet.hasMnemonic ? 'configured' : 'not in browser'}</dd></div>
+      </dl>
+      <div className="miniBalances">
+        {balances.map((balance) => (
+          <div key={balance.asset}><span>{balance.asset}</span><strong>{money.format(balance.available)}</strong></div>
+        ))}
+      </div>
+      <p className="walletMessage">{wallet.message}</p>
+    </section>
+  );
+}
+
+function ReviewerPanel({ snapshot }: { snapshot: TaskMarketSnapshot }) {
+  return (
+    <section className="reviewerPanel">
+      <div className="panelTitle"><ShieldCheck size={18} /><h2>Sphere SDK / Wallet Integration</h2></div>
+      <div className="reviewerMode">
+        <span>Reviewer mode</span>
+        <strong>{snapshot.mode === 'live' ? 'Live SDK' : 'Dry-run preview'}</strong>
+      </div>
+      <div className="signalList">
+        {Object.values(snapshot.reviewer).map((signal) => (
+          <div className={`signal ${signal.status}`} key={signal.label}>
+            <span>{signal.label}</span>
+            <strong>{signal.status}</strong>
+            <p>{signal.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PolicyPanel({ policy, onChange, disabled }: { policy: TaskPolicy; onChange: (patch: Partial<TaskPolicy>) => void; disabled: boolean }) {
+  return (
+    <section className="policy">
+      <h2>Autonomy Policy</h2>
+      <NumberInput label="Max budget" value={policy.maxBudget} step={1} onChange={(maxBudget) => onChange({ maxBudget })} disabled={disabled} />
+      <NumberInput label="Min quality" value={policy.minQuality} step={0.01} onChange={(minQuality) => onChange({ minQuality })} disabled={disabled} />
+      <NumberInput label="Tick ms" value={policy.tickMs} step={500} onChange={(tickMs) => onChange({ tickMs })} disabled={disabled} />
+      <NumberInput label="Max open jobs" value={policy.maxOpenJobs} step={1} onChange={(maxOpenJobs) => onChange({ maxOpenJobs })} disabled={disabled} />
+      <label className="toggle">
+        <input type="checkbox" checked={policy.autoApprove} onChange={(event) => onChange({ autoApprove: event.target.checked })} disabled={disabled} />
+        <span>Auto approve and pay delivered work</span>
+      </label>
+    </section>
+  );
+}
+
+function NumberInput({ label, value, step, onChange, disabled }: { label: string; value: number; step: number; onChange: (value: number) => void; disabled: boolean }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input type="number" value={value} step={step} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))} />
+    </label>
+  );
+}
+
+function JobList({ jobs }: { jobs: Job[] }) {
+  if (jobs.length === 0) {
+    return <p className="empty">No jobs yet.</p>;
+  }
+  return (
+    <div className="jobList">
+      {jobs.map((job) => (
+        <article className="job" key={job.id}>
+          <div>
+            <strong>{job.title}</strong>
+            <p>{job.prompt}</p>
+          </div>
+          <span className="jobCategory">{job.category}</span>
+          <span className="jobReward">{money.format(job.bounty)} {job.asset}</span>
+          <small className={`jobStatus ${job.status}`}>{job.status}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function WorkerCard({ snapshot }: { snapshot: TaskMarketSnapshot }) {
+  return (
+    <div className="workerCard">
+      <div className="workerHero">
+        <Bot size={28} />
+        <div>
+          <strong>{snapshot.workerProfile.nametag}</strong>
+          <span>Autonomous task worker</span>
+        </div>
+      </div>
+      <div className="workerStatus">
+        <span>Worker status</span>
+        <strong>Available</strong>
+      </div>
+      <span className="sectionLabel">Capabilities</span>
+      <div className="capabilities">
+        {snapshot.workerProfile.capabilities.map((capability) => <span key={capability}>{capability}</span>)}
+      </div>
+      <dl className="workerStats">
+        <div><dt>Min bounty</dt><dd>{snapshot.workerProfile.minBounty} {snapshot.policy.paymentAsset}</dd></div>
+        <div><dt>Avg latency</dt><dd>{Math.round(snapshot.workerProfile.avgLatencyMs / 1000)}s</dd></div>
+        <div><dt>Payment mode</dt><dd>{snapshot.policy.autoApprove ? 'auto' : 'manual'}</dd></div>
+      </dl>
+    </div>
+  );
+}
+
+function auditTitle(event: AuditEvent) {
+  const titles: Record<string, string> = {
+    accept_job: 'Job accepted',
+    await_approval: 'Awaiting approval',
+    deliver_result: 'Result delivered',
+    init: 'Agent initialized',
+    publish_job: 'Job published',
+    ready: 'Agents ready',
+    reject_job: 'Job rejected',
+    request_payment: 'Payment requested',
+    settle_payment: 'Payment settled',
+    start: 'Agent loop started',
+    stop: 'Agent loop paused',
+    tick_error: 'Agent loop error',
+    update: 'Policy updated'
+  };
+
+  return titles[event.action] ?? event.action.replaceAll('_', ' ');
+}
+
+function auditAmount(message: string) {
+  return message.match(/\b\d+(?:\.\d+)?\s[A-Z]{2,6}\b/)?.[0] ?? '';
+}
+
+function createPreviewSnapshot(): TaskMarketSnapshot {
+  return {
+    mode: 'live',
+    status: 'running',
+    clientName: '@task-client',
+    workerName: '@task-worker',
+    lastTickAt: new Date().toISOString(),
+    policy: { maxBudget: 18, minQuality: 0.82, autoApprove: true, tickMs: 4500, paymentAsset: 'UCT', maxOpenJobs: 3 },
+    clientWallet: { mode: 'live', connection: 'connected', network: 'testnet2', nametag: '@task-client', hasMnemonic: true, walletApiSession: 'online', message: 'Hosted preview uses demo fallback data. Run the backend for live Sphere SDK execution.' },
+    workerWallet: { mode: 'live', connection: 'connected', network: 'testnet2', nametag: '@task-worker', hasMnemonic: true, walletApiSession: 'online', message: 'Worker agent is ready.' },
+    balances: [{ asset: 'UCT', available: 420 }, { asset: 'ETH', available: 2.4 }],
+    jobs: [],
+    payments: [],
+    workerProfile: { nametag: '@task-worker', capabilities: ['summarize', 'classify', 'extract', 'research'], minBounty: 5, successRate: 0.94, avgLatencyMs: 4200, wallet: { mode: 'live', connection: 'connected', network: 'testnet2', nametag: '@task-worker', hasMnemonic: true, message: 'Ready.' } },
+    reviewer: {
+      sdkDependency: { label: 'Sphere SDK dependency', status: 'ready', detail: '@unicitylabs/sphere-sdk is installed in the project.' },
+      backendAgentLoop: { label: 'Backend autonomous loop', status: 'warning', detail: 'Hosted preview is showing fallback data; run npm run dev for the backend loop.' },
+      walletMode: { label: 'Wallet mode', status: 'warning', detail: 'Preview mode is active. Use SPHERE_MODE=live for wallet execution.' },
+      clientWallet: { label: 'Client wallet', status: 'ready', detail: 'Demo client wallet is represented in preview data.' },
+      workerWallet: { label: 'Worker wallet', status: 'ready', detail: 'Demo worker wallet is represented in preview data.' },
+      network: { label: 'Network', status: 'ready', detail: 'testnet2 reviewer preview.' },
+      publicAgentApi: { label: 'Public agent API', status: 'warning', detail: 'API is available when the backend is running on port 8797.' },
+      settlement: { label: 'Payment settlement', status: 'ready', detail: 'Preview payments are deterministic for reviewer reproduction.' }
+    },
+    audit: [{ id: 'preview', at: new Date().toISOString(), actor: 'system', action: 'preview', level: 'success', message: 'Hosted preview is running with demo job-market data.' }]
+  };
+}
+
+function advancePreview(snapshot: TaskMarketSnapshot): TaskMarketSnapshot {
+  if (snapshot.status === 'paused') return snapshot;
+  const now = new Date();
+  const seed = Math.floor(now.getTime() / 4500);
+  const category = ['summarize', 'classify', 'extract', 'research'][seed % 4] as Job['category'];
+  const bounty = 6 + (seed % 9);
+  const job: Job = {
+    id: `preview-job-${seed}`,
+    title: `${category} task`,
+    prompt: `Autonomous worker completes a ${category} task and requests payment.`,
+    category,
+    bounty,
+    asset: 'UCT',
+    client: '@task-client',
+    worker: '@task-worker',
+    status: 'paid',
+    createdAt: now.toISOString(),
+    deliveredAt: now.toISOString(),
+    paidAt: now.toISOString(),
+    result: 'Preview result delivered.',
+    qualityScore: 0.91,
+    source: 'client'
+  };
+  const payment = { id: `preview-pay-${seed}`, jobId: job.id, from: '@task-client', to: '@task-worker', amount: bounty, asset: 'UCT', status: 'paid' as const, createdAt: now.toISOString(), settledAt: now.toISOString(), networkRef: 'preview' };
+  const jobs = snapshot.jobs.some((item) => item.id === job.id) ? snapshot.jobs : [job, ...snapshot.jobs].slice(0, 40);
+  const payments = snapshot.payments.some((item) => item.id === payment.id) ? snapshot.payments : [payment, ...snapshot.payments].slice(0, 30);
+  const auditEvent: AuditEvent = { id: `evt-${seed}`, at: now.toISOString(), actor: 'payment', action: 'settle_payment', level: 'success', message: `Paid ${bounty} UCT to @task-worker.` };
+  return {
+    ...snapshot,
+    lastTickAt: now.toISOString(),
+    jobs,
+    payments,
+    audit: [auditEvent, ...snapshot.audit].slice(0, 100)
+  };
+}
+
+createRoot(document.getElementById('root')!).render(<App />);
