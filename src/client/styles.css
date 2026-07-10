@@ -13,6 +13,8 @@
   --radius: 12px;
   --shadow: 0 8px 20px rgb(0 0 0 / 18%);
   --shadow-hover: 0 14px 30px rgb(0 0 0 / 24%);
+  --workspace-top-row: 410px;
+  --workspace-bottom-row: 430px;
   background: #0f172a;
   color: #f8fafc;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -319,13 +321,26 @@ button:disabled {
   align-content: start;
   display: grid;
   gap: 18px;
+  grid-template-rows: var(--workspace-top-row) var(--workspace-bottom-row);
+  min-height: 0;
 }
 
 .rightGrid {
   display: grid;
   gap: 18px;
   grid-template-columns: 1.2fr 0.8fr;
-  grid-template-rows: 340px 420px;
+  grid-template-rows: var(--workspace-top-row) var(--workspace-bottom-row);
+  min-height: 0;
+}
+
+.walletPanel,
+.policy,
+.jobsPanel,
+.workerPanel,
+.paymentsPanel,
+.auditPanel {
+  height: 100%;
+  min-height: 0;
 }
 
 .panel {
@@ -890,6 +905,19 @@ button:disabled {
 
   .rightGrid {
     grid-template-rows: none;
+  }
+
+  .leftStack {
+    grid-template-rows: none;
+  }
+
+  .walletPanel,
+  .policy,
+  .jobsPanel,
+  .workerPanel,
+  .paymentsPanel,
+  .auditPanel {
+    height: auto;
   }
 
   .panelBody {
