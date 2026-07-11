@@ -2,7 +2,7 @@ import { BadgeCheck, Bot, BriefcaseBusiness, CircleDollarSign, Pause, Play, Refr
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { AuditEvent, Job, TaskMarketSnapshot, TaskPolicy } from '../shared/types';
+import type { AuditEvent, Balance, Job, TaskMarketSnapshot, TaskPolicy } from '../shared/types';
 import './styles.css';
 
 const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
@@ -12,6 +12,7 @@ type ConnectedWallet = {
   directAddress?: string;
   chainPubkey?: string;
   balance?: string;
+  balances?: Balance[];
   transport?: string;
 };
 
@@ -406,13 +407,97 @@ async function connectSphereWallet(silent: boolean): Promise<{ wallet: Connected
   };
 
   try {
-    const balance = await result.client.query<unknown>('sphere_getBalance');
-    wallet.balance = normalizeWalletBalance(balance);
+    const assets = await result.client.query<unknown>('sphere_getAssets');
+    wallet.balances = normalizeWalletAssets(assets);
+    wallet.balance = formatPrimaryBalance(wallet.balances);
   } catch {
-    // Balance is nice-to-have; identity connect is enough to prove wallet readiness.
+    try {
+      const balance = await result.client.query<unknown>('sphere_getBalance');
+      wallet.balances = normalizeWalletAssets(balance);
+      wallet.balance = formatPrimaryBalance(wallet.balances) ?? normalizeWalletBalance(balance);
+    } catch {
+      // Balance is nice-to-have; identity connect is enough to prove wallet readiness.
+    }
   }
 
   return { wallet, session: result };
+}
+
+function normalizeWalletAssets(raw: unknown): Balance[] {
+  if (raw == null) return [];
+
+  if (Array.isArray(raw)) {
+    return raw.map(normalizeAssetRecord).filter((asset): asset is Balance => Boolean(asset));
+  }
+
+  if (typeof raw === 'number' || typeof raw === 'string') {
+    const amount = Number(raw);
+    return Number.isFinite(amount) ? [{ asset: 'UCT', available: amount }] : [];
+  }
+
+  if (typeof raw === 'object') {
+    const record = raw as Record<string, unknown>;
+    const nested = record.assets ?? record.tokens ?? record.balances ?? record.items;
+    if (Array.isArray(nested)) return normalizeWalletAssets(nested);
+
+    const direct = normalizeAssetRecord(record);
+    if (direct) return [direct];
+
+    return Object.entries(record)
+      .map(([asset, value]) => normalizeAssetEntry(asset, value))
+      .filter((asset): asset is Balance => Boolean(asset));
+  }
+
+  return [];
+}
+
+function normalizeAssetRecord(raw: unknown): Balance | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const symbol = record.symbol ?? record.ticker ?? record.asset ?? record.coinId ?? record.name;
+  const amount = record.available ?? record.balance ?? record.amount ?? record.totalAmount ?? record.value ?? record.quantity;
+  const asset = normalizeAssetSymbol(symbol);
+  const available = normalizeAmount(amount, record.decimals);
+  if (!asset || available === undefined) return undefined;
+  return { asset, available };
+}
+
+function normalizeAssetEntry(asset: string, value: unknown): Balance | undefined {
+  const symbol = normalizeAssetSymbol(asset);
+  if (!symbol) return undefined;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const available = normalizeAmount(record.available ?? record.balance ?? record.amount ?? record.totalAmount ?? record.value ?? value, record.decimals);
+    return available === undefined ? undefined : { asset: symbol, available };
+  }
+  const available = normalizeAmount(value);
+  return available === undefined ? undefined : { asset: symbol, available };
+}
+
+function normalizeAssetSymbol(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const upper = value.trim().toUpperCase();
+  if (upper.includes('UCT')) return 'UCT';
+  if (upper.includes('ETH')) return 'ETH';
+  if (upper.includes('SOL')) return 'SOL';
+  if (upper.includes('BTC')) return 'BTC';
+  return upper.length <= 12 ? upper : undefined;
+}
+
+function normalizeAmount(value: unknown, decimals?: unknown) {
+  if (value == null) return undefined;
+  const text = typeof value === 'string' ? value.replaceAll(',', '') : value;
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric)) return undefined;
+  const decimalCount = Number(decimals ?? 0);
+  const amount = decimalCount > 0 && Math.abs(numeric) > 10 ** decimalCount ? numeric / 10 ** decimalCount : numeric;
+  return Math.round(amount * 1_000_000) / 1_000_000;
+}
+
+function formatPrimaryBalance(balances?: Balance[]) {
+  const uct = balances?.find((balance) => balance.asset === 'UCT');
+  if (!uct) return undefined;
+  return `${money.format(uct.available)} UCT`;
 }
 
 function normalizeWalletBalance(balance: unknown) {
@@ -440,14 +525,16 @@ function withConnectedWallet(snapshot: TaskMarketSnapshot, wallet?: ConnectedWal
   if (!wallet || !name) return snapshot;
 
   const previousClient = snapshot.clientName;
-  const balances = snapshot.balances.map((balance) => ({ ...balance }));
-  const balanceAmount = wallet.balance?.match(/-?\d+(?:\.\d+)?/)?.[0];
-  if (balanceAmount) {
+  const balances = wallet.balances?.length ? wallet.balances.map((balance) => ({ ...balance })) : snapshot.balances.map((balance) => ({ ...balance }));
+  if (!wallet.balances?.length) {
+    const balanceAmount = wallet.balance?.match(/-?\d+(?:\.\d+)?/)?.[0];
+    if (balanceAmount) {
     const index = balances.findIndex((balance) => balance.asset === 'UCT');
     const nextBalance = Number(balanceAmount);
     if (Number.isFinite(nextBalance)) {
       if (index >= 0) balances[index] = { ...balances[index], available: nextBalance };
       else balances.unshift({ asset: 'UCT', available: nextBalance });
+    }
     }
   }
 
