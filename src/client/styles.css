@@ -52,8 +52,7 @@ main {
 
 .topbar,
 .metrics,
-.workspace,
-.reviewerWrap {
+.workspace {
   margin: 0 auto;
   width: min(1420px, 100%);
 }
@@ -191,6 +190,68 @@ button:disabled {
   width: 40px;
 }
 
+.walletConnect {
+  background: linear-gradient(180deg, #60a5fa, var(--primary));
+  border-color: rgb(147 197 253 / 45%);
+  box-shadow: 0 12px 28px rgb(59 130 246 / 22%);
+  color: var(--text);
+}
+
+.walletConnect.warn {
+  background: linear-gradient(180deg, rgb(245 158 11 / 28%), rgb(120 53 15 / 58%));
+  border-color: rgb(245 158 11 / 45%);
+  box-shadow: 0 12px 28px rgb(245 158 11 / 16%);
+}
+
+.connectedWallet {
+  align-items: center;
+  background: linear-gradient(180deg, rgb(16 185 129 / 18%), rgb(6 78 59 / 28%));
+  border: 1px solid rgb(16 185 129 / 42%);
+  border-radius: 12px;
+  box-shadow: 0 0 24px rgb(16 185 129 / 14%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  color: var(--text);
+  display: inline-flex;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px 6px 12px;
+}
+
+.connectedWallet strong,
+.connectedWallet span {
+  display: block;
+}
+
+.connectedWallet strong {
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.connectedWallet span {
+  color: #a7f3d0;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.walletDot {
+  background: var(--success);
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgb(16 185 129 / 72%);
+  height: 9px;
+  width: 9px;
+}
+
+.walletDisconnect {
+  aspect-ratio: 1;
+  background: rgb(15 23 42 / 48%);
+  border: 1px solid rgb(16 185 129 / 24%);
+  border-radius: 8px;
+  color: #a7f3d0;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0;
+  width: 30px;
+}
+
 .alert {
   background: rgb(239 68 68 / 12%);
   border: 1px solid rgb(239 68 68 / 42%);
@@ -211,8 +272,7 @@ button:disabled {
 .metric,
 .panel,
 .walletPanel,
-.policy,
-.reviewerPanel {
+.policy {
   background: linear-gradient(150deg, rgb(30 41 59 / 96%), rgb(15 23 42 / 96%));
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -223,8 +283,7 @@ button:disabled {
 .metric:hover,
 .panel:hover,
 .walletPanel:hover,
-.policy:hover,
-.reviewerPanel:hover {
+.policy:hover {
   background: linear-gradient(150deg, rgb(36 50 70 / 96%), rgb(20 29 48 / 96%));
   border-color: #40516a;
   box-shadow: var(--shadow-hover), inset 0 1px 0 rgb(255 255 255 / 4%);
@@ -313,10 +372,6 @@ button:disabled {
   grid-template-columns: 300px 1fr;
 }
 
-.reviewerWrap {
-  margin-top: 18px;
-}
-
 .leftStack {
   align-content: start;
   display: grid;
@@ -375,8 +430,7 @@ button:disabled {
 }
 
 .walletPanel,
-.policy,
-.reviewerPanel {
+.policy {
   padding: 20px;
 }
 
@@ -391,110 +445,6 @@ button:disabled {
   background:
     linear-gradient(145deg, rgb(20 83 45 / 18%), transparent 42%),
     linear-gradient(150deg, rgb(30 41 59 / 96%), rgb(15 23 42 / 96%));
-}
-
-.reviewerPanel {
-  background:
-    linear-gradient(145deg, rgb(59 130 246 / 10%), transparent 40%),
-    linear-gradient(150deg, rgb(30 41 59 / 96%), rgb(15 23 42 / 96%));
-}
-
-.reviewerWrap .reviewerPanel {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 260px 1fr;
-}
-
-.reviewerWrap .panelTitle {
-  align-self: start;
-}
-
-.reviewerMode {
-  align-items: center;
-  background: rgb(15 23 42 / 72%);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  padding: 12px 14px;
-}
-
-.reviewerWrap .reviewerMode {
-  grid-column: 1;
-  margin-bottom: 0;
-}
-
-.reviewerMode span,
-.signal p,
-.signal span {
-  color: var(--secondary);
-  font-size: 12px;
-}
-
-.reviewerMode strong {
-  color: var(--text);
-}
-
-.signalList {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.reviewerWrap .signalList {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
-.signal {
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--muted);
-  border-radius: 0 10px 10px 0;
-  display: grid;
-  gap: 4px;
-  grid-template-columns: 1fr auto;
-  padding: 10px 12px;
-}
-
-.signal p {
-  grid-column: 1 / -1;
-  line-height: 1.35;
-  margin: 0;
-}
-
-.signal strong {
-  border-radius: 999px;
-  font-size: 11px;
-  padding: 3px 7px;
-  text-transform: uppercase;
-}
-
-.signal.ready {
-  border-left-color: var(--success);
-}
-
-.signal.ready strong {
-  background: rgb(16 185 129 / 14%);
-  color: #6ee7b7;
-}
-
-.signal.warning {
-  border-left-color: var(--warning);
-}
-
-.signal.warning strong {
-  background: rgb(245 158 11 / 14%);
-  color: #fbbf24;
-}
-
-.signal.blocked {
-  border-left-color: var(--danger);
-}
-
-.signal.blocked strong {
-  background: rgb(239 68 68 / 14%);
-  color: #fca5a5;
 }
 
 .walletState {
@@ -892,15 +842,8 @@ button:disabled {
 
   .metrics,
   .workspace,
-  .rightGrid,
-  .reviewerWrap .reviewerPanel {
+  .rightGrid {
     grid-template-columns: 1fr;
-  }
-
-  .reviewerWrap .signalList {
-    grid-column: 1;
-    grid-row: auto;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .rightGrid {
@@ -932,8 +875,7 @@ button:disabled {
 @media (max-width: 720px) {
   .metrics,
   .job,
-  .payment,
-  .reviewerWrap .signalList {
+  .payment {
     grid-template-columns: 1fr;
   }
 }

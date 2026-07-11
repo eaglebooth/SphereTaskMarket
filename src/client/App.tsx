@@ -1,4 +1,4 @@
-import { BadgeCheck, Bot, BriefcaseBusiness, CircleDollarSign, Pause, Play, RefreshCw, Route, ShieldCheck, WalletCards } from 'lucide-react';
+import { BadgeCheck, Bot, BriefcaseBusiness, CircleDollarSign, Pause, Play, RefreshCw, Route, ShieldCheck, Unplug, WalletCards } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -7,9 +7,34 @@ import './styles.css';
 
 const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
 
+type ConnectedWallet = {
+  nametag?: string;
+  directAddress?: string;
+  chainPubkey?: string;
+  balance?: string;
+  transport?: string;
+};
+
+type WalletConnectState = {
+  status: 'idle' | 'connecting' | 'connected' | 'error';
+  wallet?: ConnectedWallet;
+  error?: string;
+};
+
+type SphereConnectSession = {
+  client: {
+    query<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+    disconnect(): Promise<void>;
+  };
+  disconnect(): Promise<void>;
+};
+
+let activeConnectSession: SphereConnectSession | null = null;
+
 function App() {
   const [snapshot, setSnapshot] = useState<TaskMarketSnapshot | null>(null);
   const [saving, setSaving] = useState(false);
+  const [wallet, setWallet] = useState<WalletConnectState>({ status: 'idle' });
 
   async function load() {
     try {
@@ -54,10 +79,37 @@ function App() {
     }
   }
 
+  async function connectUserWallet(silent = false) {
+    setWallet((current) => ({ ...current, status: 'connecting', error: undefined }));
+    try {
+      const result = await connectSphereWallet(silent);
+      activeConnectSession = result.session;
+      setWallet({ status: 'connected', wallet: result.wallet });
+    } catch (error) {
+      setWallet({ status: silent ? 'idle' : 'error', error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async function disconnectUserWallet() {
+    try {
+      await activeConnectSession?.disconnect();
+      await activeConnectSession?.client.disconnect();
+    } catch {
+      // Wallet disconnect can fail if the popup/iframe session is already gone.
+    } finally {
+      activeConnectSession = null;
+      setWallet({ status: 'idle' });
+    }
+  }
+
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(), 1600);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    void connectUserWallet(true);
   }, []);
 
   const totals = useMemo(() => {
@@ -86,6 +138,7 @@ function App() {
           <p className="eyebrow">Autonomous agent job market with payment settlement</p>
         </div>
         <div className="statusCluster">
+          <ConnectWalletButton state={wallet} onConnect={() => connectUserWallet(false)} onDisconnect={disconnectUserWallet} />
           <span className={`pill ${snapshot.mode}`}>{snapshot.mode}</span>
           <span className={`pill ${snapshot.status}`}>{snapshot.status}</span>
           <button className={running ? 'secondary' : 'primary'} disabled={saving} onClick={() => command(running ? '/api/agent/stop' : '/api/agent/start')}>
@@ -156,9 +209,6 @@ function App() {
         </div>
       </section>
 
-      <section className="reviewerWrap">
-        <ReviewerPanel snapshot={snapshot} />
-      </section>
     </main>
   );
 }
@@ -185,6 +235,31 @@ function Panel({ title, children, className = '' }: { title: string; children: R
   );
 }
 
+function ConnectWalletButton({ state, onConnect, onDisconnect }: { state: WalletConnectState; onConnect: () => void; onDisconnect: () => void }) {
+  if (state.status === 'connected' && state.wallet) {
+    const name = state.wallet.nametag ? `@${state.wallet.nametag.replace(/^@/, '')}` : `${state.wallet.directAddress?.slice(0, 16) ?? 'wallet'}...`;
+    return (
+      <div className="connectedWallet" title={state.wallet.directAddress ?? state.wallet.chainPubkey ?? name}>
+        <span className="walletDot" />
+        <div>
+          <strong>{name}</strong>
+          <span>{state.wallet.balance ?? state.wallet.transport ?? 'Sphere wallet'}</span>
+        </div>
+        <button className="walletDisconnect" onClick={onDisconnect} title="Disconnect wallet" aria-label="Disconnect wallet">
+          <Unplug size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button className={state.status === 'error' ? 'walletConnect warn' : 'walletConnect'} onClick={onConnect} disabled={state.status === 'connecting'} title={state.error ?? 'Connect your Sphere wallet'}>
+      <WalletCards size={18} />
+      {state.status === 'connecting' ? 'Connecting...' : state.status === 'error' ? 'Retry Wallet' : 'Connect Wallet'}
+    </button>
+  );
+}
+
 function WalletPanel({ title, wallet, balances }: { title: string; wallet: TaskMarketSnapshot['clientWallet']; balances: TaskMarketSnapshot['balances'] }) {
   return (
     <section className="walletPanel">
@@ -204,27 +279,6 @@ function WalletPanel({ title, wallet, balances }: { title: string; wallet: TaskM
         ))}
       </div>
       <p className="walletMessage">{wallet.message}</p>
-    </section>
-  );
-}
-
-function ReviewerPanel({ snapshot }: { snapshot: TaskMarketSnapshot }) {
-  return (
-    <section className="reviewerPanel">
-      <div className="panelTitle"><ShieldCheck size={18} /><h2>Sphere SDK / Wallet Integration</h2></div>
-      <div className="reviewerMode">
-        <span>Reviewer mode</span>
-        <strong>{snapshot.mode === 'live' ? 'Live SDK' : 'Dry-run preview'}</strong>
-      </div>
-      <div className="signalList">
-        {Object.values(snapshot.reviewer).map((signal) => (
-          <div className={`signal ${signal.status}`} key={signal.label}>
-            <span>{signal.label}</span>
-            <strong>{signal.status}</strong>
-            <p>{signal.detail}</p>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -324,6 +378,52 @@ function auditTitle(event: AuditEvent) {
 
 function auditAmount(message: string) {
   return message.match(/\b\d+(?:\.\d+)?\s[A-Z]{2,6}\b/)?.[0] ?? '';
+}
+
+async function connectSphereWallet(silent: boolean): Promise<{ wallet: ConnectedWallet; session: SphereConnectSession }> {
+  const browserConnect = await import('@unicitylabs/sphere-sdk/connect/browser');
+  const connectCore = await import('@unicitylabs/sphere-sdk/connect');
+  const result = await browserConnect.autoConnect({
+    dapp: {
+      name: 'Sphere Task Market',
+      description: 'Post paid tasks and let autonomous Sphere agents deliver and settle work.',
+      icon: `${window.location.origin}/sphere-task-market-logo.png`,
+      url: window.location.origin
+    },
+    walletUrl: 'https://sphere.unicity.network',
+    network: connectCore.SPHERE_NETWORKS.testnet2,
+    permissions: ['identity:read', 'balance:read', 'transfer:request', 'events:subscribe'],
+    silent
+  });
+
+  const identity = result.connection.identity;
+  const wallet: ConnectedWallet = {
+    nametag: identity.nametag,
+    directAddress: identity.directAddress,
+    chainPubkey: identity.chainPubkey,
+    transport: result.transport
+  };
+
+  try {
+    const balance = await result.client.query<unknown>('sphere_getBalance');
+    wallet.balance = normalizeWalletBalance(balance);
+  } catch {
+    // Balance is nice-to-have; identity connect is enough to prove wallet readiness.
+  }
+
+  return { wallet, session: result };
+}
+
+function normalizeWalletBalance(balance: unknown) {
+  if (typeof balance === 'number' || typeof balance === 'string') {
+    return `${balance} UCT`;
+  }
+  if (balance && typeof balance === 'object') {
+    const record = balance as Record<string, unknown>;
+    const value = record.UCT ?? record.uct ?? record.balance ?? record.amount ?? record.available;
+    if (value !== undefined) return `${String(value)} UCT`;
+  }
+  return undefined;
 }
 
 function createPreviewSnapshot(): TaskMarketSnapshot {
