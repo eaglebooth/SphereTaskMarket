@@ -126,6 +126,7 @@ function App() {
   }
 
   const running = snapshot.status === 'running';
+  const view = withConnectedWallet(snapshot, wallet.wallet);
 
   return (
     <main>
@@ -139,8 +140,8 @@ function App() {
         </div>
         <div className="statusCluster">
           <ConnectWalletButton state={wallet} onConnect={() => connectUserWallet(false)} onDisconnect={disconnectUserWallet} />
-          <span className={`pill ${snapshot.mode}`}>{snapshot.mode}</span>
-          <span className={`pill ${snapshot.status}`}>{snapshot.status}</span>
+          <span className={`pill ${view.mode}`}>{view.mode}</span>
+          <span className={`pill ${view.status}`}>{view.status}</span>
           <button className={running ? 'secondary' : 'primary'} disabled={saving} onClick={() => command(running ? '/api/agent/stop' : '/api/agent/start')}>
             {running ? <Pause size={18} /> : <Play size={18} />}
             {running ? 'Pause' : 'Start'}
@@ -151,32 +152,32 @@ function App() {
         </div>
       </header>
 
-      {snapshot.error && <section className="alert">{snapshot.error}</section>}
+      {view.error && <section className="alert">{view.error}</section>}
 
       <section className="metrics">
-        <Metric icon={<Bot />} label="Client Agent" value={snapshot.clientName} detail={snapshot.lastTickAt ?? 'not ticked'} />
-        <Metric icon={<BadgeCheck />} label="Worker Service" value={snapshot.workerName} detail={`${Math.round(snapshot.workerProfile.successRate * 100)}% success`} />
+        <Metric icon={<Bot />} label="Client Agent" value={view.clientName} detail={view.lastTickAt ?? 'not ticked'} />
+        <Metric icon={<BadgeCheck />} label="Worker Service" value={view.workerName} detail={`${Math.round(view.workerProfile.successRate * 100)}% success`} />
         <Metric icon={<BriefcaseBusiness />} label="Delivered Jobs" value={String(totals.delivered)} detail={`${totals.open} open jobs`} />
-        <Metric icon={<CircleDollarSign />} label="Payments" value={String(totals.paid)} detail={snapshot.policy.paymentAsset} />
+        <Metric icon={<CircleDollarSign />} label="Payments" value={String(totals.paid)} detail={view.policy.paymentAsset} />
       </section>
 
       <section className="workspace">
         <aside className="leftStack">
-          <WalletPanel title="Client Wallet" wallet={snapshot.clientWallet} balances={snapshot.balances} />
-          <PolicyPanel policy={snapshot.policy} onChange={patchPolicy} disabled={saving} />
+          <WalletPanel title="Client Wallet" wallet={view.clientWallet} balances={view.balances} />
+          <PolicyPanel policy={view.policy} onChange={patchPolicy} disabled={saving} />
         </aside>
 
         <div className="rightGrid">
           <Panel title="Job Market" className="jobsPanel">
-            <JobList jobs={snapshot.jobs} />
+            <JobList jobs={view.jobs} />
           </Panel>
           <Panel title="Worker Agent" className="workerPanel">
-            <WorkerCard snapshot={snapshot} />
+            <WorkerCard snapshot={view} />
           </Panel>
           <Panel title="Payments" className="paymentsPanel">
             <div className="paymentList">
-              {snapshot.payments.length === 0 && <p className="empty">No payments yet.</p>}
-              {snapshot.payments.map((payment) => (
+              {view.payments.length === 0 && <p className="empty">No payments yet.</p>}
+              {view.payments.map((payment) => (
                 <div className="payment" key={payment.id}>
                   <div className="paymentAmount">
                     <strong>{money.format(payment.amount)} {payment.asset}</strong>
@@ -194,7 +195,7 @@ function App() {
           </Panel>
           <Panel title="Decision Audit" className="auditPanel">
             <div className="timeline">
-              {snapshot.audit.map((event) => (
+              {view.audit.map((event) => (
                 <article className={`event ${event.level}`} key={event.id}>
                   <div className="eventHeader">
                     <strong>{auditTitle(event)}</strong>
@@ -424,6 +425,52 @@ function normalizeWalletBalance(balance: unknown) {
     if (value !== undefined) return `${String(value)} UCT`;
   }
   return undefined;
+}
+
+function walletDisplayName(wallet?: ConnectedWallet) {
+  if (!wallet) return undefined;
+  if (wallet.nametag) return `@${wallet.nametag.replace(/^@/, '')}`;
+  if (wallet.directAddress) return `${wallet.directAddress.slice(0, 18)}...`;
+  if (wallet.chainPubkey) return `${wallet.chainPubkey.slice(0, 18)}...`;
+  return undefined;
+}
+
+function withConnectedWallet(snapshot: TaskMarketSnapshot, wallet?: ConnectedWallet): TaskMarketSnapshot {
+  const name = walletDisplayName(wallet);
+  if (!wallet || !name) return snapshot;
+
+  const previousClient = snapshot.clientName;
+  const balances = snapshot.balances.map((balance) => ({ ...balance }));
+  const balanceAmount = wallet.balance?.match(/-?\d+(?:\.\d+)?/)?.[0];
+  if (balanceAmount) {
+    const index = balances.findIndex((balance) => balance.asset === 'UCT');
+    const nextBalance = Number(balanceAmount);
+    if (Number.isFinite(nextBalance)) {
+      if (index >= 0) balances[index] = { ...balances[index], available: nextBalance };
+      else balances.unshift({ asset: 'UCT', available: nextBalance });
+    }
+  }
+
+  return {
+    ...snapshot,
+    clientName: name,
+    clientWallet: {
+      ...snapshot.clientWallet,
+      connection: 'connected',
+      nametag: name,
+      address: wallet.directAddress ?? wallet.chainPubkey,
+      hasMnemonic: false,
+      walletApiSession: 'online',
+      message: 'Connected Sphere wallet is now the client identity for posting and paying tasks.'
+    },
+    balances,
+    jobs: snapshot.jobs.map((job) => (job.client === previousClient || job.client === '@task-client' ? { ...job, client: name } : job)),
+    payments: snapshot.payments.map((payment) => (payment.from === previousClient || payment.from === '@task-client' ? { ...payment, from: name } : payment)),
+    audit: snapshot.audit.map((event) => ({
+      ...event,
+      message: event.message.replaceAll(previousClient, name).replaceAll('@task-client', name)
+    }))
+  };
 }
 
 function createPreviewSnapshot(): TaskMarketSnapshot {
