@@ -13,7 +13,7 @@
   --radius: 12px;
   --shadow: 0 8px 20px rgb(0 0 0 / 18%);
   --shadow-hover: 0 14px 30px rgb(0 0 0 / 24%);
-  --workspace-top-row: 410px;
+  --workspace-top-row: 440px;
   --workspace-bottom-row: 430px;
   background: #0f172a;
   color: #f8fafc;
@@ -445,9 +445,14 @@ button:disabled {
   background:
     linear-gradient(145deg, rgb(20 83 45 / 18%), transparent 42%),
     linear-gradient(150deg, rgb(30 41 59 / 96%), rgb(15 23 42 / 96%));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .walletState {
+  flex: 0 0 auto;
   align-items: center;
   border-radius: 12px;
   display: flex;
@@ -475,6 +480,7 @@ button:disabled {
 
 .walletDetails {
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
   margin: 0 0 16px;
 }
@@ -493,9 +499,25 @@ button:disabled {
 
 .miniBalances {
   display: grid;
+  flex: 1 1 auto;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 16px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 3px;
+  scrollbar-gutter: stable;
+}
+
+.miniBalances::-webkit-scrollbar {
+  width: 8px;
+}
+
+.miniBalances::-webkit-scrollbar-thumb {
+  background: #475569;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
 }
 
 .miniBalances div {
@@ -503,12 +525,19 @@ button:disabled {
   border: 1px solid var(--border);
   border-left: 3px solid #475569;
   border-radius: 10px;
-  padding: 12px;
+  min-height: 68px;
+  padding: 10px 12px;
 }
 
 .miniBalances span,
 .miniBalances strong {
   display: block;
+}
+
+.walletMessage {
+  flex: 0 0 auto;
+  line-height: 1.35;
+  margin: 0;
 }
 
 .field {
